@@ -7,13 +7,22 @@ import { Label } from '../ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { Badge } from '../ui/badge'
 import { Avatar } from '../ui/avatar'
-import { User, Mail, Phone, Shield, Camera, Save, Settings } from 'lucide-react'
+import { 
+  User, 
+  Mail, 
+  Phone, 
+  MapPin, 
+  Edit, 
+  Save, 
+  X,
+  Shield,
+  Camera
+} from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 
 export function ProfilePage() {
   const { user, updateUser } = useAuth()
-  const [editing, setEditing] = useState(false)
-  const [loading, setSaving] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
   const [formData, setFormData] = useState({
     name: user?.name || '',
     email: user?.email || '',
@@ -23,45 +32,44 @@ export function ProfilePage() {
     sport: user?.sport || '',
     position: user?.position || ''
   })
-
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <Header />
-        <main className="max-w-4xl mx-auto px-4 py-8">
-          <Card className="p-8 text-center">
-            <h1 className="text-2xl font-bold text-gray-900 mb-4">Access Denied</h1>
-            <p className="text-gray-600">Please log in to view your profile.</p>
-          </Card>
-        </main>
-      </div>
-    )
-  }
-
-  const handleInputChange = (field: string, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
-  }
+  const [loading, setLoading] = useState(false)
 
   const handleSave = async () => {
-    setSaving(true)
+    if (!user) return
+
+    setLoading(true)
     try {
-      await new Promise(resolve => setTimeout(resolve, 1000)) // Simulate API call
-      
-      updateUser(user.id, {
-        name: formData.name,
-        phone: formData.phone,
-        team: formData.team,
-        school: formData.school,
-        sport: formData.sport,
-        position: formData.position
-      })
-      
-      setEditing(false)
+      await updateUser(user.id, formData)
+      setIsEditing(false)
       alert('Profile updated successfully!')
-    } catch (error) {
-      alert('Failed to update profile. Please try again.')
+    } catch (error: any) {
+      alert(error.message || 'Failed to update profile')
     } finally {
-      setSaving(false)
+      setLoading(false)
+    }
+  }
+
+  const handleCancel = () => {
+    setFormData({
+      name: user?.name || '',
+      email: user?.email || '',
+      phone: user?.phone || '',
+      team: user?.team || '',
+      school: user?.school || '',
+      sport: user?.sport || '',
+      position: user?.position || ''
+    })
+    setIsEditing(false)
+  }
+
+  const getRoleDisplayName = (role: string) => {
+    switch (role) {
+      case 'student': return 'Student Athlete'
+      case 'coach': return 'Coach'
+      case 'parent': return 'Parent'
+      case 'supporter': return 'Community Supporter'
+      case 'admin': return 'Administrator'
+      default: return role
     }
   }
 
@@ -76,15 +84,17 @@ export function ProfilePage() {
     }
   }
 
-  const getRoleDisplayName = (role: string) => {
-    switch (role) {
-      case 'student': return 'Student Athlete'
-      case 'coach': return 'Coach'
-      case 'parent': return 'Parent'
-      case 'supporter': return 'Community Supporter'
-      case 'admin': return 'Administrator'
-      default: return role
-    }
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Header />
+        <div className="max-w-4xl mx-auto px-4 py-8">
+          <div className="text-center">
+            <p className="text-gray-600">Loading profile...</p>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -92,13 +102,8 @@ export function ProfilePage() {
       <Header />
       <main className="max-w-4xl mx-auto px-4 py-8">
         <div className="mb-8">
-          <div className="flex items-center space-x-3 mb-4">
-            <User className="w-8 h-8 text-blue-600" />
-            <h1 className="text-3xl font-bold text-gray-900">My Profile</h1>
-          </div>
-          <p className="text-gray-600">
-            Manage your account information and preferences
-          </p>
+          <h1 className="text-3xl font-bold text-gray-900">Profile Settings</h1>
+          <p className="text-gray-600">Manage your account information and preferences</p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -106,44 +111,58 @@ export function ProfilePage() {
           <div className="lg:col-span-1">
             <Card className="p-6">
               <div className="text-center">
-                <div className="relative inline-block mb-4">
-                  <Avatar className="w-24 h-24">
+                <div className="relative inline-block">
+                  <Avatar className="w-24 h-24 mx-auto mb-4">
                     <img 
                       src={user.profileImage || "https://picsum.photos/id/64/96/96"} 
-                      alt="Profile" 
+                      alt={user.name}
                       className="rounded-full"
                     />
                   </Avatar>
                   <Button
-                    variant="ghost"
                     size="sm"
-                    className="absolute bottom-0 right-0 rounded-full bg-white shadow-md"
+                    variant="outline"
+                    className="absolute bottom-0 right-0 rounded-full w-8 h-8 p-0"
                   >
                     <Camera className="w-4 h-4" />
                   </Button>
                 </div>
                 
-                <h2 className="text-xl font-bold text-gray-900 mb-2">{user.name}</h2>
-                <Badge className={`mb-4 ${getRoleBadgeColor(user.role)}`}>
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">{user.name}</h2>
+                <Badge className={getRoleBadgeColor(user.role)}>
                   {getRoleDisplayName(user.role)}
                 </Badge>
                 
-                <div className="space-y-2 text-sm text-gray-600">
-                  <div className="flex items-center justify-center space-x-2">
-                    <Mail className="w-4 h-4" />
-                    <span>{user.email}</span>
+                <div className="mt-4 space-y-2 text-sm text-gray-600">
+                  <div className="flex items-center justify-center">
+                    <Mail className="w-4 h-4 mr-2" />
+                    {user.email}
                   </div>
                   {user.phone && (
-                    <div className="flex items-center justify-center space-x-2">
-                      <Phone className="w-4 h-4" />
-                      <span>{user.phone}</span>
+                    <div className="flex items-center justify-center">
+                      <Phone className="w-4 h-4 mr-2" />
+                      {user.phone}
                     </div>
                   )}
-                  {user.twoFactorEnabled && (
-                    <div className="flex items-center justify-center space-x-2">
-                      <Shield className="w-4 h-4 text-green-600" />
-                      <span className="text-green-600">2FA Enabled</span>
+                  {(user.team || user.school) && (
+                    <div className="flex items-center justify-center">
+                      <MapPin className="w-4 h-4 mr-2" />
+                      {user.team || user.school}
                     </div>
+                  )}
+                </div>
+
+                <div className="mt-6 flex items-center justify-center space-x-2">
+                  {user.verified && (
+                    <Badge className="bg-green-100 text-green-800">
+                      <Shield className="w-3 h-3 mr-1" />
+                      Verified
+                    </Badge>
+                  )}
+                  {user.twoFactorEnabled && (
+                    <Badge className="bg-blue-100 text-blue-800">
+                      2FA Enabled
+                    </Badge>
                   )}
                 </div>
               </div>
@@ -154,162 +173,136 @@ export function ProfilePage() {
           <div className="lg:col-span-2">
             <Card className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-semibold text-gray-900">Profile Information</h3>
-                <Button
-                  variant={editing ? "ghost" : "outline"}
-                  onClick={() => setEditing(!editing)}
-                >
-                  <Settings className="w-4 h-4 mr-2" />
-                  {editing ? 'Cancel' : 'Edit Profile'}
-                </Button>
-              </div>
-
-              <div className="space-y-6">
-                {/* Basic Information */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <Label htmlFor="name">Full Name</Label>
-                    <Input
-                      id="name"
-                      value={editing ? formData.name : user.name}
-                      onChange={(e) => handleInputChange('name', e.target.value)}
-                      disabled={!editing}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="email">Email Address</Label>
-                    <Input
-                      id="email"
-                      value={user.email}
-                      disabled
-                      className="bg-gray-50"
-                    />
-                    <div className="text-xs text-gray-500 mt-1">
-                      Email cannot be changed
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <Label htmlFor="phone">Phone Number</Label>
-                    <Input
-                      id="phone"
-                      value={editing ? formData.phone : (user.phone || '')}
-                      onChange={(e) => handleInputChange('phone', e.target.value)}
-                      disabled={!editing}
-                      placeholder="(555) 123-4567"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="role">Role</Label>
-                    <Input
-                      id="role"
-                      value={getRoleDisplayName(user.role)}
-                      disabled
-                      className="bg-gray-50"
-                    />
-                  </div>
-                </div>
-
-                {/* Team Information - Show for students and coaches */}
-                {(user.role === 'student' || user.role === 'coach') && (
-                  <div className="border-t border-gray-200 pt-6">
-                    <h4 className="text-md font-semibold text-gray-900 mb-4">Team Information</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <Label htmlFor="team">Team Name</Label>
-                        <Input
-                          id="team"
-                          value={editing ? formData.team : (user.team || '')}
-                          onChange={(e) => handleInputChange('team', e.target.value)}
-                          disabled={!editing}
-                          placeholder="Enter team name"
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="school">School/Organization</Label>
-                        <Input
-                          id="school"
-                          value={editing ? formData.school : (user.school || '')}
-                          onChange={(e) => handleInputChange('school', e.target.value)}
-                          disabled={!editing}
-                          placeholder="Enter school name"
-                        />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-                      <div>
-                        <Label htmlFor="sport">Sport</Label>
-                        <Input
-                          id="sport"
-                          value={editing ? formData.sport : (user.sport || '')}
-                          onChange={(e) => handleInputChange('sport', e.target.value)}
-                          disabled={!editing}
-                          placeholder="e.g., Basketball"
-                        />
-                      </div>
-                      {user.role === 'student' && (
-                        <div>
-                          <Label htmlFor="position">Position</Label>
-                          <Input
-                            id="position"
-                            value={editing ? formData.position : (user.position || '')}
-                            onChange={(e) => handleInputChange('position', e.target.value)}
-                            disabled={!editing}
-                            placeholder="e.g., Point Guard"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Security Settings */}
-                <div className="border-t border-gray-200 pt-6">
-                  <h4 className="text-md font-semibold text-gray-900 mb-4">Security Settings</h4>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                      <div>
-                        <div className="font-medium text-gray-900">Two-Factor Authentication</div>
-                        <div className="text-sm text-gray-600">
-                          {user.twoFactorEnabled ? 'Enabled' : 'Add an extra layer of security to your account'}
-                        </div>
-                      </div>
-                      <Button variant="outline" size="sm">
-                        {user.twoFactorEnabled ? 'Manage' : 'Enable'}
-                      </Button>
-                    </div>
-                    
-                    <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                      <div>
-                        <div className="font-medium text-gray-900">Password</div>
-                        <div className="text-sm text-gray-600">Change your account password</div>
-                      </div>
-                      <Button variant="outline" size="sm">
-                        Change Password
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Save Button */}
-                {editing && (
-                  <div className="flex justify-end pt-6 border-t border-gray-200">
-                    <Button onClick={handleSave} disabled={loading}>
-                      {loading ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                          Saving...
-                        </>
-                      ) : (
-                        <>
-                          <Save className="w-4 h-4 mr-2" />
-                          Save Changes
-                        </>
-                      )}
+                <h3 className="text-lg font-semibold text-gray-900">Personal Information</h3>
+                {!isEditing ? (
+                  <Button onClick={() => setIsEditing(true)} size="sm">
+                    <Edit className="w-4 h-4 mr-2" />
+                    Edit Profile
+                  </Button>
+                ) : (
+                  <div className="flex space-x-2">
+                    <Button onClick={handleSave} size="sm" disabled={loading}>
+                      <Save className="w-4 h-4 mr-2" />
+                      {loading ? 'Saving...' : 'Save'}
+                    </Button>
+                    <Button onClick={handleCancel} variant="outline" size="sm">
+                      <X className="w-4 h-4 mr-2" />
+                      Cancel
                     </Button>
                   </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <Label htmlFor="name">Full Name</Label>
+                  {isEditing ? (
+                    <Input
+                      id="name"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="Enter your full name"
+                    />
+                  ) : (
+                    <p className="mt-1 text-sm text-gray-900">{user.name}</p>
+                  )}
+                </div>
+
+                <div>
+                  <Label htmlFor="email">Email Address</Label>
+                  {isEditing ? (
+                    <Input
+                      id="email"
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      placeholder="Enter your email"
+                    />
+                  ) : (
+                    <p className="mt-1 text-sm text-gray-900">{user.email}</p>
+                  )}
+                </div>
+
+                <div>
+                  <Label htmlFor="phone">Phone Number</Label>
+                  {isEditing ? (
+                    <Input
+                      id="phone"
+                      type="tel"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      placeholder="Enter your phone number"
+                    />
+                  ) : (
+                    <p className="mt-1 text-sm text-gray-900">{user.phone || 'Not provided'}</p>
+                  )}
+                </div>
+
+                <div>
+                  <Label htmlFor="role">Role</Label>
+                  <p className="mt-1 text-sm text-gray-900">{getRoleDisplayName(user.role)}</p>
+                </div>
+
+                {(user.role === 'student' || user.role === 'coach') && (
+                  <>
+                    <div>
+                      <Label htmlFor="team">Team</Label>
+                      {isEditing ? (
+                        <Input
+                          id="team"
+                          value={formData.team}
+                          onChange={(e) => setFormData({ ...formData, team: e.target.value })}
+                          placeholder="Enter your team name"
+                        />
+                      ) : (
+                        <p className="mt-1 text-sm text-gray-900">{user.team || 'Not specified'}</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <Label htmlFor="school">School</Label>
+                      {isEditing ? (
+                        <Input
+                          id="school"
+                          value={formData.school}
+                          onChange={(e) => setFormData({ ...formData, school: e.target.value })}
+                          placeholder="Enter your school name"
+                        />
+                      ) : (
+                        <p className="mt-1 text-sm text-gray-900">{user.school || 'Not specified'}</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <Label htmlFor="sport">Sport</Label>
+                      {isEditing ? (
+                        <Input
+                          id="sport"
+                          value={formData.sport}
+                          onChange={(e) => setFormData({ ...formData, sport: e.target.value })}
+                          placeholder="Enter your sport"
+                        />
+                      ) : (
+                        <p className="mt-1 text-sm text-gray-900">{user.sport || 'Not specified'}</p>
+                      )}
+                    </div>
+
+                    {user.role === 'student' && (
+                      <div>
+                        <Label htmlFor="position">Position</Label>
+                        {isEditing ? (
+                          <Input
+                            id="position"
+                            value={formData.position}
+                            onChange={(e) => setFormData({ ...formData, position: e.target.value })}
+                            placeholder="Enter your position"
+                          />
+                        ) : (
+                          <p className="mt-1 text-sm text-gray-900">{user.position || 'Not specified'}</p>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </Card>

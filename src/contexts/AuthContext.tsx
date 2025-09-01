@@ -42,6 +42,8 @@ interface AuthContextType {
   updateUser: (userId: string, updates: Partial<User>) => void
   deleteUser: (userId: string) => void
   toggleUserVerification: (userId: string) => void
+  checkEmailExists: (email: string, excludeUserId?: string) => boolean
+  checkPhoneExists: (phone: string, excludeUserId?: string) => boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -90,6 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         name: 'Admin User',
         email: 'admin@believefundraising.com',
         role: 'admin',
+        phone: '(555) 000-0001',
         verified: true,
         twoFactorEnabled: false,
         profileImage: 'https://picsum.photos/id/64/32/32'
@@ -163,6 +166,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user])
 
+  const checkEmailExists = (email: string, excludeUserId?: string) => {
+    return users.some(u => 
+      u.email.toLowerCase() === email.toLowerCase() && 
+      u.id !== excludeUserId
+    )
+  }
+
+  const checkPhoneExists = (phone: string, excludeUserId?: string) => {
+    if (!phone) return false
+    return users.some(u => 
+      u.phone === phone && 
+      u.id !== excludeUserId
+    )
+  }
+
   const login = async (data: LoginData) => {
     setLoading(true)
     try {
@@ -186,10 +204,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Simulate API call
       await new Promise(resolve => setTimeout(resolve, 1500))
       
-      // Check if user already exists
-      const existingUser = users.find(u => u.email === data.email)
-      if (existingUser) {
-        throw new Error('User already exists')
+      // Check if email already exists
+      if (checkEmailExists(data.email)) {
+        throw new Error('An account with this email already exists')
+      }
+
+      // Check if phone already exists (if provided)
+      if (data.phone && checkPhoneExists(data.phone)) {
+        throw new Error('An account with this phone number already exists')
       }
 
       const newUser: User = {
@@ -233,6 +255,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const updateUser = (userId: string, updates: Partial<User>) => {
+    // Check for email uniqueness if email is being updated
+    if (updates.email && checkEmailExists(updates.email, userId)) {
+      throw new Error('An account with this email already exists')
+    }
+
+    // Check for phone uniqueness if phone is being updated
+    if (updates.phone && checkPhoneExists(updates.phone, userId)) {
+      throw new Error('An account with this phone number already exists')
+    }
+
     setUsers(prev => prev.map(u => 
       u.id === userId ? { ...u, ...updates } : u
     ))
@@ -244,7 +276,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const deleteUser = (userId: string) => {
-    // Prevent deleting the current user or the main admin
+    // Prevent deleting current user or main admin
     if (userId === user?.id || userId === 'admin-1') {
       throw new Error('Cannot delete this user')
     }
@@ -277,7 +309,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       updateUserRole,
       updateUser,
       deleteUser,
-      toggleUserVerification
+      toggleUserVerification,
+      checkEmailExists,
+      checkPhoneExists
     }}>
       {children}
     </AuthContext.Provider>

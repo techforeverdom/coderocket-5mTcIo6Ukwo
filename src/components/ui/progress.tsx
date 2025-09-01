@@ -3,7 +3,9 @@ import { cn } from "@/lib/utils"
 
 const Progress = React.forwardRef<
   HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement> & { value?: number }
+  React.HTMLAttributes<HTMLDivElement> & {
+    value?: number
+  }
 >(({ className, value, ...props }, ref) => (
   <div
     ref={ref}
