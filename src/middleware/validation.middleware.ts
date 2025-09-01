@@ -178,8 +178,8 @@ export const commonSchemas = {
 
   // Pagination schema
   paginationSchema: z.object({
-    page: z.string().transform(val => parseInt(val) || 1),
-    limit: z.string().transform(val => Math.min(parseInt(val) || 10, 100)),
+    page: z.string().transform(val => parseInt(val) || 1).default('1'),
+    limit: z.string().transform(val => Math.min(parseInt(val) || 10, 100)).default('10'),
     sort: z.string().optional(),
     order: z.enum(['asc', 'desc']).default('desc')
   })

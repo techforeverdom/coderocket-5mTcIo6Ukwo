@@ -6,17 +6,21 @@ import { asyncHandler } from '../middleware/error.middleware'
 
 const router = Router()
 
+// Query schema for campaigns listing
+const campaignsQuerySchema = z.object({
+  page: z.string().transform(val => parseInt(val) || 1).default('1'),
+  limit: z.string().transform(val => Math.min(parseInt(val) || 10, 100)).default('10'),
+  status: z.enum(['active', 'paused', 'completed', 'cancelled']).optional(),
+  category: z.string().optional(),
+  search: z.string().optional()
+})
+
 // Get all campaigns
 router.get('/',
-  validateQuery(z.object({
-    page: z.string().transform(val => parseInt(val) || 1).optional(),
-    limit: z.string().transform(val => Math.min(parseInt(val) || 10, 100)).optional(),
-    status: z.enum(['active', 'paused', 'completed', 'cancelled']).optional(),
-    category: z.string().optional(),
-    search: z.string().optional()
-  })),
+  validateQuery(campaignsQuerySchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const { page = 1, limit = 10, status, category, search } = req.query
+    const query = req.query as z.infer<typeof campaignsQuerySchema>
+    const { page, limit, status, category, search } = query
 
     // Mock campaign data
     const campaigns = [
@@ -26,7 +30,7 @@ router.get('/',
         description: 'Help our basketball team get new uniforms and equipment for the upcoming season.',
         goalAmount: 500000, // $5,000.00
         currentAmount: 275000, // $2,750.00
-        status: 'active',
+        status: 'active' as const,
         category: 'sports',
         createdBy: 'coach-1',
         createdAt: new Date().toISOString(),
@@ -40,13 +44,27 @@ router.get('/',
         description: 'Support our science club in purchasing new laboratory equipment for experiments.',
         goalAmount: 300000, // $3,000.00
         currentAmount: 125000, // $1,250.00
-        status: 'active',
+        status: 'active' as const,
         category: 'education',
         createdBy: 'teacher-1',
         createdAt: new Date().toISOString(),
         endDate: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString(),
         donorCount: 8,
         image: 'https://picsum.photos/id/60/400/300'
+      },
+      {
+        id: 'campaign-3',
+        title: 'Drama Club Costumes',
+        description: 'Help our drama club purchase costumes and props for the upcoming school play.',
+        goalAmount: 200000, // $2,000.00
+        currentAmount: 85000, // $850.00
+        status: 'paused' as const,
+        category: 'arts',
+        createdBy: 'teacher-2',
+        createdAt: new Date().toISOString(),
+        endDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
+        donorCount: 5,
+        image: 'https://picsum.photos/id/180/400/300'
       }
     ]
 
@@ -61,7 +79,7 @@ router.get('/',
       filteredCampaigns = filteredCampaigns.filter(c => c.category === category)
     }
     
-    if (search) {
+    if (search && typeof search === 'string') {
       const searchLower = search.toLowerCase()
       filteredCampaigns = filteredCampaigns.filter(c => 
         c.title.toLowerCase().includes(searchLower) ||
@@ -69,18 +87,20 @@ router.get('/',
       )
     }
 
-    // Apply pagination
-    const startIndex = (page - 1) * limit
-    const paginatedCampaigns = filteredCampaigns.slice(startIndex, startIndex + limit)
+    // Apply pagination with proper number types
+    const pageNum = Number(page)
+    const limitNum = Number(limit)
+    const startIndex = (pageNum - 1) * limitNum
+    const paginatedCampaigns = filteredCampaigns.slice(startIndex, startIndex + limitNum)
 
     res.json({
       success: true,
       data: paginatedCampaigns,
       pagination: {
-        page,
-        limit,
+        page: pageNum,
+        limit: limitNum,
         total: filteredCampaigns.length,
-        pages: Math.ceil(filteredCampaigns.length / limit)
+        pages: Math.ceil(filteredCampaigns.length / limitNum)
       }
     })
   })
@@ -214,6 +234,83 @@ router.delete('/:id',
       success: true,
       message: 'Campaign deleted successfully',
       campaignId: id
+    })
+  })
+)
+
+// Get campaign statistics
+router.get('/stats/overview',
+  authenticateToken,
+  requireRole(['coach', 'admin']),
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    // Mock campaign statistics
+    const stats = {
+      totalCampaigns: 15,
+      activeCampaigns: 8,
+      completedCampaigns: 5,
+      pausedCampaigns: 2,
+      totalRaised: 2500000, // $25,000.00
+      averageGoal: 400000, // $4,000.00
+      successRate: 0.75, // 75%
+      topCategories: [
+        { category: 'sports', count: 6, amount: 1200000 },
+        { category: 'education', count: 4, amount: 800000 },
+        { category: 'arts', count: 3, amount: 350000 },
+        { category: 'community', count: 2, amount: 150000 }
+      ]
+    }
+
+    res.json({
+      success: true,
+      data: stats
+    })
+  })
+)
+
+// Get campaigns by category
+router.get('/category/:category',
+  validateParams(z.object({
+    category: z.string().min(1, 'Category is required')
+  })),
+  validateQuery(z.object({
+    page: z.string().transform(val => parseInt(val) || 1).default('1'),
+    limit: z.string().transform(val => Math.min(parseInt(val) || 10, 100)).default('10')
+  })),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { category } = req.params
+    const query = req.query as { page: number; limit: number }
+    const { page, limit } = query
+
+    // Mock campaigns by category
+    const campaigns = [
+      {
+        id: 'campaign-1',
+        title: 'Lincoln High Basketball Team',
+        description: 'Help our basketball team get new uniforms and equipment.',
+        goalAmount: 500000,
+        currentAmount: 275000,
+        status: 'active',
+        category: 'sports',
+        donorCount: 15,
+        image: 'https://picsum.photos/id/403/400/300'
+      }
+    ].filter(c => c.category === category)
+
+    const pageNum = Number(page)
+    const limitNum = Number(limit)
+    const startIndex = (pageNum - 1) * limitNum
+    const paginatedCampaigns = campaigns.slice(startIndex, startIndex + limitNum)
+
+    res.json({
+      success: true,
+      data: paginatedCampaigns,
+      category,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total: campaigns.length,
+        pages: Math.ceil(campaigns.length / limitNum)
+      }
     })
   })
 )
