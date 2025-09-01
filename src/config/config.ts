@@ -4,7 +4,8 @@ export const config = {
     name: 'Believe Fundraising',
     version: '1.0.0',
     environment: process.env.NODE_ENV || 'development',
-    url: process.env.VITE_APP_URL || 'http://localhost:5173'
+    url: process.env.VITE_APP_URL || 'http://localhost:5173',
+    port: parseInt(process.env.PORT || '3000')
   },
 
   // API Configuration
