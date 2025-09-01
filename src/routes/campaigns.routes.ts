@@ -17,12 +17,17 @@ const campaignsQuerySchema = z.object({
 
 type CampaignsQuery = z.infer<typeof campaignsQuerySchema>
 
+// Extended request interface for validated queries
+interface CampaignsRequest extends Request {
+  query: CampaignsQuery
+}
+
 // Get all campaigns
 router.get('/',
   validateQuery(campaignsQuerySchema),
-  asyncHandler(async (req: Request, res: Response) => {
+  asyncHandler(async (req: CampaignsRequest, res: Response) => {
     // After validation, req.query is properly typed
-    const { page, limit, status, category, search } = req.query as CampaignsQuery
+    const { page, limit, status, category, search } = req.query
 
     // Mock campaign data
     const campaigns = [
@@ -275,15 +280,19 @@ const categoryQuerySchema = z.object({
 
 type CategoryQuery = z.infer<typeof categoryQuerySchema>
 
+interface CategoryRequest extends Request {
+  query: CategoryQuery
+}
+
 // Get campaigns by category
 router.get('/category/:category',
   validateParams(z.object({
     category: z.string().min(1, 'Category is required')
   })),
   validateQuery(categoryQuerySchema),
-  asyncHandler(async (req: Request, res: Response) => {
+  asyncHandler(async (req: CategoryRequest, res: Response) => {
     const { category } = req.params
-    const { page, limit } = req.query as CategoryQuery
+    const { page, limit } = req.query
 
     // Mock campaigns by category
     const allCampaigns = [
