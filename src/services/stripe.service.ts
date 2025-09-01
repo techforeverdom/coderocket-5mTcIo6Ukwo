@@ -1,214 +1,146 @@
-import { stripe, STRIPE_CONFIG } from '../config/stripe';
-import { config } from '../config/config';
-import { v4 as uuidv4 } from 'uuid';
-import Stripe from 'stripe';
+import Stripe from 'stripe'
+import { config, calculateStripeFees, calculatePlatformFees, calculateNetAmount } from '../config/config'
 
-export interface CreatePaymentIntentParams {
-  amountCents: number;
-  campaignId: string;
-  participantId?: string;
-  donorEmail?: string;
-  donorName?: string;
-  message?: string;
-  idempotencyKey?: string;
+// Initialize Stripe only if enabled
+let stripe: Stripe | null = null
+
+if (config.stripe.enabled && config.stripe.secretKey !== 'sk_test_development_key') {
+  stripe = new Stripe(config.stripe.secretKey, {
+    apiVersion: '2023-10-16',
+  })
 }
 
-export interface FeeCalculation {
-  amountCents: number;
-  platformFeeCents: number;
-  stripeFeeCents: number;
-  totalFeeCents: number;
-  netCents: number;
+export interface PaymentIntentData {
+  amount: number // in cents
+  currency: string
+  description?: string
+  metadata?: Record<string, string>
+}
+
+export interface PaymentResult {
+  success: boolean
+  paymentIntentId?: string
+  clientSecret?: string
+  error?: string
 }
 
 export class StripeService {
-  /**
-   * Calculate fees for a donation amount
-   */
-  static calculateFees(amountCents: number): FeeCalculation {
-    // Platform fee (configurable 6-10%)
-    const platformFeeCents = Math.round(
-      (amountCents * config.fees.platformFeePercentage) / 100
-    );
-    
-    // Stripe fee (2.9% + $0.30)
-    const stripeFeeCents = Math.round(
-      (amountCents * config.fees.stripeFeePercentage) / 100 + config.fees.stripeFeeFixed
-    );
-    
-    const totalFeeCents = platformFeeCents + stripeFeeCents;
-    const netCents = amountCents - totalFeeCents;
-    
-    return {
-      amountCents,
-      platformFeeCents,
-      stripeFeeCents,
-      totalFeeCents,
-      netCents: Math.max(0, netCents), // Ensure non-negative
-    };
-  }
-
-  /**
-   * Create a PaymentIntent for donation checkout
-   */
-  static async createPaymentIntent(params: CreatePaymentIntentParams): Promise<Stripe.PaymentIntent> {
-    const {
-      amountCents,
-      campaignId,
-      participantId,
-      donorEmail,
-      donorName,
-      message,
-      idempotencyKey = uuidv4(),
-    } = params;
-
-    // Validate minimum amount (Stripe requires at least $0.50)
-    if (amountCents < 50) {
-      throw new Error('Donation amount must be at least $0.50');
-    }
-
-    const feeCalculation = this.calculateFees(amountCents);
-
-    const metadata: Record<string, string> = {
-      campaign_id: campaignId,
-      amount_cents: amountCents.toString(),
-      platform_fee_cents: feeCalculation.platformFeeCents.toString(),
-      stripe_fee_cents: feeCalculation.stripeFeeCents.toString(),
-      total_fee_cents: feeCalculation.totalFeeCents.toString(),
-      net_cents: feeCalculation.netCents.toString(),
-    };
-
-    if (participantId) {
-      metadata.participant_id = participantId;
-    }
-
-    if (donorEmail) {
-      metadata.donor_email = donorEmail;
-    }
-
-    if (donorName) {
-      metadata.donor_name = donorName;
-    }
-
-    if (message) {
-      metadata.message = message.substring(0, 500); // Stripe metadata limit
-    }
-
-    try {
-      const paymentIntent = await stripe.paymentIntents.create(
-        {
-          amount: amountCents,
-          currency: STRIPE_CONFIG.currency,
-          payment_method_types: STRIPE_CONFIG.paymentMethodTypes,
-          capture_method: STRIPE_CONFIG.captureMethod,
-          confirmation_method: STRIPE_CONFIG.confirmationMethod,
-          metadata,
-          description: `Donation to campaign ${campaignId}`,
-          receipt_email: donorEmail,
-        },
-        {
-          idempotencyKey,
-        }
-      );
-
-      return paymentIntent;
-    } catch (error) {
-      console.error('Error creating PaymentIntent:', error);
-      throw new Error('Failed to create payment intent');
-    }
-  }
-
-  /**
-   * Retrieve a PaymentIntent by ID
-   */
-  static async getPaymentIntent(paymentIntentId: string): Promise<Stripe.PaymentIntent> {
-    try {
-      return await stripe.paymentIntents.retrieve(paymentIntentId);
-    } catch (error) {
-      console.error('Error retrieving PaymentIntent:', error);
-      throw new Error('Failed to retrieve payment intent');
-    }
-  }
-
-  /**
-   * Create a refund for a PaymentIntent
-   */
-  static async createRefund(
-    paymentIntentId: string,
-    amountCents?: number,
-    reason?: Stripe.RefundCreateParams.Reason,
-    idempotencyKey?: string
-  ): Promise<Stripe.Refund> {
-    try {
-      const refundParams: Stripe.RefundCreateParams = {
-        payment_intent: paymentIntentId,
-        reason: reason || 'requested_by_customer',
-      };
-
-      if (amountCents) {
-        refundParams.amount = amountCents;
+  static async createPaymentIntent(data: PaymentIntentData): Promise<PaymentResult> {
+    if (!stripe) {
+      return {
+        success: false,
+        error: 'Stripe is not configured or enabled'
       }
+    }
 
-      return await stripe.refunds.create(refundParams, {
-        idempotencyKey: idempotencyKey || uuidv4(),
-      });
-    } catch (error) {
-      console.error('Error creating refund:', error);
-      throw new Error('Failed to create refund');
+    try {
+      const fees = calculateStripeFees(data.amount)
+      const platformFees = calculatePlatformFees(data.amount)
+      const totalAmount = data.amount + fees + platformFees
+
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: totalAmount,
+        currency: data.currency,
+        description: data.description,
+        metadata: {
+          ...data.metadata,
+          originalAmount: data.amount.toString(),
+          stripeFees: fees.toString(),
+          platformFees: platformFees.toString(),
+        },
+        automatic_payment_methods: {
+          enabled: true,
+        },
+      })
+
+      return {
+        success: true,
+        paymentIntentId: paymentIntent.id,
+        clientSecret: paymentIntent.client_secret || undefined,
+      }
+    } catch (error: any) {
+      console.error('Stripe payment intent creation failed:', error)
+      return {
+        success: false,
+        error: error.message || 'Payment processing failed'
+      }
     }
   }
 
-  /**
-   * Verify webhook signature
-   */
-  static verifyWebhookSignature(
-    payload: string | Buffer,
-    signature: string,
-    secret: string = config.stripe.webhookSecret
-  ): Stripe.Event {
+  static async confirmPayment(paymentIntentId: string): Promise<PaymentResult> {
+    if (!stripe) {
+      return {
+        success: false,
+        error: 'Stripe is not configured or enabled'
+      }
+    }
+
     try {
-      return stripe.webhooks.constructEvent(payload, signature, secret);
-    } catch (error) {
-      console.error('Webhook signature verification failed:', error);
-      throw new Error('Invalid webhook signature');
+      const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId)
+      
+      if (paymentIntent.status === 'succeeded') {
+        return {
+          success: true,
+          paymentIntentId: paymentIntent.id,
+        }
+      } else {
+        return {
+          success: false,
+          error: `Payment status: ${paymentIntent.status}`
+        }
+      }
+    } catch (error: any) {
+      console.error('Stripe payment confirmation failed:', error)
+      return {
+        success: false,
+        error: error.message || 'Payment confirmation failed'
+      }
     }
   }
 
-  /**
-   * Create a customer (optional, for recurring donors)
-   */
-  static async createCustomer(params: {
-    email: string;
-    name?: string;
-    phone?: string;
-    metadata?: Record<string, string>;
-  }): Promise<Stripe.Customer> {
+  static async refundPayment(paymentIntentId: string, amount?: number): Promise<PaymentResult> {
+    if (!stripe) {
+      return {
+        success: false,
+        error: 'Stripe is not configured or enabled'
+      }
+    }
+
     try {
-      return await stripe.customers.create({
-        email: params.email,
-        name: params.name,
-        phone: params.phone,
-        metadata: params.metadata,
-      });
-    } catch (error) {
-      console.error('Error creating customer:', error);
-      throw new Error('Failed to create customer');
+      const refund = await stripe.refunds.create({
+        payment_intent: paymentIntentId,
+        amount: amount, // If not provided, refunds the full amount
+      })
+
+      return {
+        success: true,
+        paymentIntentId: refund.payment_intent as string,
+      }
+    } catch (error: any) {
+      console.error('Stripe refund failed:', error)
+      return {
+        success: false,
+        error: error.message || 'Refund failed'
+      }
     }
   }
 
-  /**
-   * List payment methods for a customer
-   */
-  static async listPaymentMethods(customerId: string): Promise<Stripe.PaymentMethod[]> {
-    try {
-      const paymentMethods = await stripe.paymentMethods.list({
-        customer: customerId,
-        type: 'card',
-      });
-      return paymentMethods.data;
-    } catch (error) {
-      console.error('Error listing payment methods:', error);
-      throw new Error('Failed to list payment methods');
+  static calculateFees(amountCents: number) {
+    return {
+      stripeFees: calculateStripeFees(amountCents),
+      platformFees: calculatePlatformFees(amountCents),
+      netAmount: calculateNetAmount(amountCents),
+      totalFees: calculateStripeFees(amountCents) + calculatePlatformFees(amountCents)
     }
+  }
+
+  static formatAmount(amountCents: number): string {
+    return (amountCents / 100).toFixed(2)
+  }
+
+  static isEnabled(): boolean {
+    return config.stripe.enabled && stripe !== null
   }
 }
+
+export default StripeService

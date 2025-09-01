@@ -48,6 +48,14 @@ export const config = {
     enabled: !!process.env.STRIPE_SECRET_KEY // Only enable if key is provided
   },
 
+  // Fee Configuration
+  fees: {
+    stripeFeePercentage: parseFloat(process.env.STRIPE_FEE_PERCENTAGE || '2.9'), // 2.9%
+    stripeFeeFixed: parseInt(process.env.STRIPE_FEE_FIXED || '30'), // 30 cents
+    platformFeePercentage: parseFloat(process.env.PLATFORM_FEE_PERCENTAGE || '3.0'), // 3.0%
+    platformFeeFixed: parseInt(process.env.PLATFORM_FEE_FIXED || '0') // 0 cents
+  },
+
   // File Upload Configuration
   upload: {
     maxFileSize: 5 * 1024 * 1024, // 5MB
@@ -112,6 +120,23 @@ export function isDevelopment() {
 
 export function isPaymentsEnabled() {
   return config.features.enablePayments && config.stripe.enabled
+}
+
+// Fee calculation helpers
+export function calculateStripeFees(amountCents: number): number {
+  return Math.round((amountCents * config.fees.stripeFeePercentage) / 100 + config.fees.stripeFeeFixed)
+}
+
+export function calculatePlatformFees(amountCents: number): number {
+  return Math.round((amountCents * config.fees.platformFeePercentage) / 100 + config.fees.platformFeeFixed)
+}
+
+export function calculateTotalFees(amountCents: number): number {
+  return calculateStripeFees(amountCents) + calculatePlatformFees(amountCents)
+}
+
+export function calculateNetAmount(amountCents: number): number {
+  return amountCents - calculateTotalFees(amountCents)
 }
 
 export default config

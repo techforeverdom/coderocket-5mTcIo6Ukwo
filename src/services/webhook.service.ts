@@ -1,91 +1,138 @@
-import { db } from '../config/database';
-import { v4 as uuidv4 } from 'uuid';
+import { Request, Response } from 'express'
+import { v4 as uuidv4 } from 'uuid'
+import Stripe from 'stripe'
+import { config } from '../config/config'
 
-export interface LogWebhookEventParams {
-  source: 'stripe' | 'twilio' | 'mailchimp';
-  eventType: string;
-  payload: any;
-  receivedAt: Date;
-  processed?: boolean;
+export interface WebhookEvent {
+  id: string
+  type: string
+  data: any
+  timestamp: Date
+  processed: boolean
 }
 
 export class WebhookService {
-  /**
-   * Log a webhook event
-   */
-  static async logEvent(params: LogWebhookEventParams) {
-    const { source, eventType, payload, receivedAt, processed = false } = params;
+  private static events: Map<string, WebhookEvent> = new Map()
 
-    const result = await db.query(
-      `INSERT INTO webhook_events (
-         id, source, event_type, payload, received_at, processed
-       )
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING *`,
-      [uuidv4(), source, eventType, JSON.stringify(payload), receivedAt, processed]
-    );
-
-    return result.rows[0];
-  }
-
-  /**
-   * Mark webhook event as processed
-   */
-  static async markAsProcessed(eventId: string) {
-    const result = await db.query(
-      `UPDATE webhook_events 
-       SET processed = true, updated_at = NOW()
-       WHERE payload->>'id' = $1 OR id = $1
-       RETURNING *`,
-      [eventId]
-    );
-
-    return result.rows[0];
-  }
-
-  /**
-   * Get unprocessed webhook events
-   */
-  static async getUnprocessedEvents(source?: 'stripe' | 'twilio' | 'mailchimp', limit = 100) {
-    let query = `
-      SELECT * FROM webhook_events 
-      WHERE processed = false
-    `;
-    const params = [];
-
-    if (source) {
-      query += ` AND source = $1`;
-      params.push(source);
+  static async handleStripeWebhook(req: Request, res: Response): Promise<void> {
+    const sig = req.headers['stripe-signature'] as string
+    
+    if (!sig) {
+      res.status(400).send('Missing stripe-signature header')
+      return
     }
 
-    query += ` ORDER BY received_at ASC LIMIT $${params.length + 1}`;
-    params.push(limit);
+    try {
+      // In development, we'll simulate webhook processing
+      if (config.app.environment === 'development') {
+        const event = this.simulateWebhookEvent(req.body)
+        await this.processWebhookEvent(event)
+        res.json({ received: true, eventId: event.id })
+        return
+      }
 
-    const result = await db.query(query, params);
-    return result.rows;
+      // Production webhook verification would go here
+      const event = req.body as Stripe.Event
+      const webhookEvent = this.createWebhookEvent(event)
+      
+      await this.processWebhookEvent(webhookEvent)
+      res.json({ received: true, eventId: webhookEvent.id })
+
+    } catch (error: any) {
+      console.error('Webhook processing failed:', error)
+      res.status(400).send(`Webhook Error: ${error.message}`)
+    }
   }
 
-  /**
-   * Retry failed webhook processing
-   */
-  static async retryFailedEvents(source?: 'stripe' | 'twilio' | 'mailchimp') {
-    // This would implement retry logic for failed webhook events
-    // For now, just return unprocessed events
-    return this.getUnprocessedEvents(source);
+  private static simulateWebhookEvent(body: any): WebhookEvent {
+    return {
+      id: uuidv4(),
+      type: body.type || 'payment_intent.succeeded',
+      data: body.data || {},
+      timestamp: new Date(),
+      processed: false
+    }
   }
 
-  /**
-   * Clean up old webhook events
-   */
-  static async cleanupOldEvents(daysOld = 30) {
-    const result = await db.query(
-      `DELETE FROM webhook_events 
-       WHERE created_at < NOW() - INTERVAL '${daysOld} days'
-       AND processed = true
-       RETURNING COUNT(*)`,
-      []
-    );
+  private static createWebhookEvent(stripeEvent: Stripe.Event): WebhookEvent {
+    return {
+      id: stripeEvent.id,
+      type: stripeEvent.type,
+      data: stripeEvent.data,
+      timestamp: new Date(stripeEvent.created * 1000),
+      processed: false
+    }
+  }
 
-    return result.rows[0];
+  private static async processWebhookEvent(event: WebhookEvent): Promise<void> {
+    console.log(`Processing webhook event: ${event.type}`)
+
+    try {
+      switch (event.type) {
+        case 'payment_intent.succeeded':
+          await this.handlePaymentSucceeded(event)
+          break
+        case 'payment_intent.payment_failed':
+          await this.handlePaymentFailed(event)
+          break
+        case 'charge.dispute.created':
+          await this.handleChargeDispute(event)
+          break
+        default:
+          console.log(`Unhandled event type: ${event.type}`)
+      }
+
+      event.processed = true
+      this.events.set(event.id, event)
+
+    } catch (error) {
+      console.error(`Failed to process webhook event ${event.id}:`, error)
+      throw error
+    }
+  }
+
+  private static async handlePaymentSucceeded(event: WebhookEvent): Promise<void> {
+    const paymentIntent = event.data.object
+    console.log(`Payment succeeded: ${paymentIntent.id}`)
+    
+    // Here you would typically:
+    // 1. Update campaign funding amount
+    // 2. Send confirmation email
+    // 3. Update user's donation history
+    // 4. Trigger any post-payment workflows
+  }
+
+  private static async handlePaymentFailed(event: WebhookEvent): Promise<void> {
+    const paymentIntent = event.data.object
+    console.log(`Payment failed: ${paymentIntent.id}`)
+    
+    // Here you would typically:
+    // 1. Log the failure
+    // 2. Send failure notification
+    // 3. Update payment status
+  }
+
+  private static async handleChargeDispute(event: WebhookEvent): Promise<void> {
+    const dispute = event.data.object
+    console.log(`Charge dispute created: ${dispute.id}`)
+    
+    // Here you would typically:
+    // 1. Alert administrators
+    // 2. Gather evidence
+    // 3. Update dispute status
+  }
+
+  static getEvent(eventId: string): WebhookEvent | undefined {
+    return this.events.get(eventId)
+  }
+
+  static getAllEvents(): WebhookEvent[] {
+    return Array.from(this.events.values())
+  }
+
+  static getEventsByType(type: string): WebhookEvent[] {
+    return Array.from(this.events.values()).filter(event => event.type === type)
   }
 }
+
+export default WebhookService
