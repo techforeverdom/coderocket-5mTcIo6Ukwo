@@ -93,9 +93,11 @@ export function optionalAuth(req: AuthRequest, res: Response, next: NextFunction
 }
 
 export function generateToken(payload: Omit<JWTPayload, 'iat' | 'exp'>): string {
-  return jwt.sign(payload, config.auth.jwtSecret, {
+  const options: jwt.SignOptions = {
     expiresIn: config.auth.jwtExpiresIn
-  })
+  }
+  
+  return jwt.sign(payload, config.auth.jwtSecret, options)
 }
 
 export function verifyToken(token: string): JWTPayload | null {

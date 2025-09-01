@@ -79,6 +79,54 @@ export function validateParams(schema: z.ZodSchema) {
   }
 }
 
+// Alias for backward compatibility and common usage
+export const validateRequest = validateBody
+
+// Combined validation middleware
+export function validate(options: {
+  body?: z.ZodSchema
+  query?: z.ZodSchema
+  params?: z.ZodSchema
+}) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    try {
+      if (options.params) {
+        req.params = options.params.parse(req.params)
+      }
+      
+      if (options.query) {
+        req.query = options.query.parse(req.query)
+      }
+      
+      if (options.body) {
+        req.body = options.body.parse(req.body)
+      }
+      
+      next()
+    } catch (error) {
+      if (error instanceof ZodError) {
+        res.status(400).json({
+          error: 'Validation failed',
+          details: error.errors.map(err => ({
+            field: err.path.join('.'),
+            message: err.message,
+            code: err.code,
+            location: err.path[0] === 'body' ? 'body' : 
+                     err.path[0] === 'query' ? 'query' : 
+                     err.path[0] === 'params' ? 'params' : 'unknown'
+          }))
+        })
+        return
+      }
+      
+      res.status(400).json({
+        error: 'Invalid request data'
+      })
+      return
+    }
+  }
+}
+
 // Common validation schemas
 export const commonSchemas = {
   // User schemas

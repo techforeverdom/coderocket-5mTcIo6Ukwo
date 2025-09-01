@@ -15,11 +15,11 @@ export interface LogEntry {
 export function requestLogger(req: Request, res: Response, next: NextFunction): void {
   const startTime = Date.now()
   
-  // Capture original end function
-  const originalEnd = res.end
+  // Store original end method
+  const originalEnd = res.end.bind(res)
   
-  // Override end function to log response
-  res.end = function(chunk?: any, encoding?: any) {
+  // Override end method to capture response details
+  res.end = function(this: Response, ...args: any[]): Response {
     const responseTime = Date.now() - startTime
     
     const logEntry: LogEntry = {
@@ -29,22 +29,27 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
       statusCode: res.statusCode,
       responseTime,
       userAgent: req.get('User-Agent'),
-      ip: req.ip || req.connection.remoteAddress || 'unknown',
+      ip: req.ip || req.socket.remoteAddress || 'unknown',
       userId: (req as any).user?.id
     }
 
     // Log based on environment and log level
     if (config.app.environment === 'development' || config.logging.level === 'debug') {
-      console.log(`${logEntry.method} ${logEntry.url} - ${logEntry.statusCode} - ${logEntry.responseTime}ms`)
+      const statusColor = res.statusCode >= 400 ? '\x1b[31m' : res.statusCode >= 300 ? '\x1b[33m' : '\x1b[32m'
+      const resetColor = '\x1b[0m'
+      console.log(
+        `${logEntry.timestamp} - ${logEntry.method} ${logEntry.url} - ${statusColor}${logEntry.statusCode}${resetColor} - ${logEntry.responseTime}ms`
+      )
     }
 
     // In production, you might want to send logs to a service
     if (config.app.environment === 'production') {
       // Send to logging service (e.g., Winston, CloudWatch, etc.)
+      // Example: logger.info(logEntry)
     }
 
-    // Call original end function
-    originalEnd.call(this, chunk, encoding)
+    // Call original end method with all arguments
+    return originalEnd.apply(this, args)
   }
 
   next()
@@ -60,7 +65,32 @@ export function securityLogger(req: Request, res: Response, next: NextFunction):
     'permission-denied'
   ]
 
-  // This would typically be called from route handlers for specific events
-  // For now, we'll just pass through
+  // Add security context to request for later use
+  ;(req as any).securityContext = {
+    ip: req.ip || req.socket.remoteAddress,
+    userAgent: req.get('User-Agent'),
+    timestamp: new Date().toISOString()
+  }
+
   next()
+}
+
+export function logSecurityEvent(eventType: string, details: any, req: Request): void {
+  const securityLog = {
+    type: eventType,
+    timestamp: new Date().toISOString(),
+    ip: req.ip || req.socket.remoteAddress,
+    userAgent: req.get('User-Agent'),
+    url: req.originalUrl,
+    method: req.method,
+    userId: (req as any).user?.id,
+    details
+  }
+
+  console.warn('Security Event:', securityLog)
+
+  // In production, send to security monitoring service
+  if (config.app.environment === 'production') {
+    // Example: securityLogger.warn(securityLog)
+  }
 }
