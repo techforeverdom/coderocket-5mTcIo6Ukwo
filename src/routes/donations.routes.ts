@@ -1,5 +1,6 @@
-import { Router } from 'express'
-import { authenticateToken, requireRole } from '../middleware/auth.middleware'
+import { Router, Request, Response } from 'express'
+import { z } from 'zod'
+import { authenticateToken, requireRole, AuthRequest } from '../middleware/auth.middleware'
 import { validateBody, validateParams, commonSchemas } from '../middleware/validation.middleware'
 import { asyncHandler } from '../middleware/error.middleware'
 
@@ -9,7 +10,7 @@ const router = Router()
 router.get('/', 
   authenticateToken,
   requireRole('admin'),
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     // Mock donation data
     const donations = [
       {
@@ -49,7 +50,7 @@ router.get('/campaign/:campaignId',
   validateParams(z.object({
     campaignId: z.string().min(1, 'Campaign ID is required')
   })),
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: Request, res: Response) => {
     const { campaignId } = req.params
 
     // Mock donation data for campaign
@@ -77,9 +78,14 @@ router.get('/campaign/:campaignId',
 router.post('/',
   authenticateToken,
   validateBody(commonSchemas.createDonationSchema),
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     const { amount, campaignId, anonymous, message } = req.body
-    const user = (req as any).user
+    const user = req.user
+
+    if (!user) {
+      res.status(401).json({ error: 'Authentication required' })
+      return
+    }
 
     // Mock donation creation
     const donation = {
@@ -87,7 +93,7 @@ router.post('/',
       amount,
       campaignId,
       donorId: user.id,
-      donorName: anonymous ? 'Anonymous' : user.name,
+      donorName: anonymous ? 'Anonymous' : user.email, // Using email as name fallback
       anonymous,
       message: message || '',
       createdAt: new Date().toISOString(),
@@ -111,8 +117,13 @@ router.post('/',
 // Get user's donation history
 router.get('/my-donations',
   authenticateToken,
-  asyncHandler(async (req, res) => {
-    const user = (req as any).user
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const user = req.user
+
+    if (!user) {
+      res.status(401).json({ error: 'Authentication required' })
+      return
+    }
 
     // Mock user donations
     const donations = [
@@ -146,7 +157,7 @@ router.put('/:id',
     status: z.enum(['pending', 'completed', 'failed', 'refunded']).optional(),
     message: z.string().max(500).optional()
   })),
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     const { id } = req.params
     const updates = req.body
 
@@ -170,7 +181,7 @@ router.delete('/:id',
   authenticateToken,
   requireRole('admin'),
   validateParams(commonSchemas.idParamSchema),
-  asyncHandler(async (req, res) => {
+  asyncHandler(async (req: AuthRequest, res: Response) => {
     const { id } = req.params
 
     // In a real app, you would:
@@ -183,6 +194,41 @@ router.delete('/:id',
       success: true,
       message: 'Donation refunded successfully',
       donationId: id
+    })
+  })
+)
+
+// Get donation statistics (admin only)
+router.get('/stats',
+  authenticateToken,
+  requireRole('admin'),
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    // Mock donation statistics
+    const stats = {
+      totalDonations: 15,
+      totalAmount: 125000, // $1,250.00
+      averageDonation: 8333, // $83.33
+      topDonation: 25000, // $250.00
+      recentDonations: [
+        {
+          id: 'donation-1',
+          amount: 5000,
+          donorName: 'John Smith',
+          campaignTitle: 'Lincoln High Basketball',
+          createdAt: new Date().toISOString()
+        }
+      ],
+      donationsByStatus: {
+        completed: 12,
+        pending: 2,
+        failed: 1,
+        refunded: 0
+      }
+    }
+
+    res.json({
+      success: true,
+      data: stats
     })
   })
 )
