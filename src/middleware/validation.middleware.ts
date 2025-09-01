@@ -30,7 +30,9 @@ export function validateBody(schema: z.ZodSchema) {
 export function validateQuery(schema: z.ZodSchema) {
   return (req: Request, res: Response, next: NextFunction): void => {
     try {
-      req.query = schema.parse(req.query)
+      // Parse and transform query parameters, then assign back to req.query
+      const parsedQuery = schema.parse(req.query)
+      req.query = parsedQuery as any // Safe cast after validation
       next()
     } catch (error) {
       if (error instanceof ZodError) {
@@ -95,7 +97,8 @@ export function validate(options: {
       }
       
       if (options.query) {
-        req.query = options.query.parse(req.query)
+        const parsedQuery = options.query.parse(req.query)
+        req.query = parsedQuery as any
       }
       
       if (options.body) {

@@ -15,12 +15,14 @@ const campaignsQuerySchema = z.object({
   search: z.string().optional()
 })
 
+type CampaignsQuery = z.infer<typeof campaignsQuerySchema>
+
 // Get all campaigns
 router.get('/',
   validateQuery(campaignsQuerySchema),
   asyncHandler(async (req: Request, res: Response) => {
-    const query = req.query as z.infer<typeof campaignsQuerySchema>
-    const { page, limit, status, category, search } = query
+    // After validation, req.query is properly typed
+    const { page, limit, status, category, search } = req.query as CampaignsQuery
 
     // Mock campaign data
     const campaigns = [
@@ -79,7 +81,7 @@ router.get('/',
       filteredCampaigns = filteredCampaigns.filter(c => c.category === category)
     }
     
-    if (search && typeof search === 'string') {
+    if (search) {
       const searchLower = search.toLowerCase()
       filteredCampaigns = filteredCampaigns.filter(c => 
         c.title.toLowerCase().includes(searchLower) ||
@@ -87,20 +89,18 @@ router.get('/',
       )
     }
 
-    // Apply pagination with proper number types
-    const pageNum = Number(page)
-    const limitNum = Number(limit)
-    const startIndex = (pageNum - 1) * limitNum
-    const paginatedCampaigns = filteredCampaigns.slice(startIndex, startIndex + limitNum)
+    // Apply pagination - page and limit are already numbers from Zod transform
+    const startIndex = (page - 1) * limit
+    const paginatedCampaigns = filteredCampaigns.slice(startIndex, startIndex + limit)
 
     res.json({
       success: true,
       data: paginatedCampaigns,
       pagination: {
-        page: pageNum,
-        limit: limitNum,
+        page,
+        limit,
         total: filteredCampaigns.length,
-        pages: Math.ceil(filteredCampaigns.length / limitNum)
+        pages: Math.ceil(filteredCampaigns.length / limit)
       }
     })
   })
@@ -267,22 +267,26 @@ router.get('/stats/overview',
   })
 )
 
+// Category query schema
+const categoryQuerySchema = z.object({
+  page: z.string().transform(val => parseInt(val) || 1).default('1'),
+  limit: z.string().transform(val => Math.min(parseInt(val) || 10, 100)).default('10')
+})
+
+type CategoryQuery = z.infer<typeof categoryQuerySchema>
+
 // Get campaigns by category
 router.get('/category/:category',
   validateParams(z.object({
     category: z.string().min(1, 'Category is required')
   })),
-  validateQuery(z.object({
-    page: z.string().transform(val => parseInt(val) || 1).default('1'),
-    limit: z.string().transform(val => Math.min(parseInt(val) || 10, 100)).default('10')
-  })),
+  validateQuery(categoryQuerySchema),
   asyncHandler(async (req: Request, res: Response) => {
     const { category } = req.params
-    const query = req.query as { page: number; limit: number }
-    const { page, limit } = query
+    const { page, limit } = req.query as CategoryQuery
 
     // Mock campaigns by category
-    const campaigns = [
+    const allCampaigns = [
       {
         id: 'campaign-1',
         title: 'Lincoln High Basketball Team',
@@ -293,23 +297,35 @@ router.get('/category/:category',
         category: 'sports',
         donorCount: 15,
         image: 'https://picsum.photos/id/403/400/300'
+      },
+      {
+        id: 'campaign-2',
+        title: 'Science Club Equipment',
+        description: 'Support our science club in purchasing new laboratory equipment.',
+        goalAmount: 300000,
+        currentAmount: 125000,
+        status: 'active',
+        category: 'education',
+        donorCount: 8,
+        image: 'https://picsum.photos/id/60/400/300'
       }
-    ].filter(c => c.category === category)
+    ]
 
-    const pageNum = Number(page)
-    const limitNum = Number(limit)
-    const startIndex = (pageNum - 1) * limitNum
-    const paginatedCampaigns = campaigns.slice(startIndex, startIndex + limitNum)
+    const campaigns = allCampaigns.filter(c => c.category === category)
+
+    // Apply pagination - page and limit are already numbers from Zod transform
+    const startIndex = (page - 1) * limit
+    const paginatedCampaigns = campaigns.slice(startIndex, startIndex + limit)
 
     res.json({
       success: true,
       data: paginatedCampaigns,
       category,
       pagination: {
-        page: pageNum,
-        limit: limitNum,
+        page,
+        limit,
         total: campaigns.length,
-        pages: Math.ceil(campaigns.length / limitNum)
+        pages: Math.ceil(campaigns.length / limit)
       }
     })
   })
