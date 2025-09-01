@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import { config } from '../config/config'
-import { AuthenticatedRequest } from '../types/express'
 
 export interface JWTPayload {
   id: string
@@ -11,8 +10,25 @@ export interface JWTPayload {
   exp?: number
 }
 
-// Use the custom AuthenticatedRequest type
-export function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+// Standard Express Request with optional user (after authentication)
+export interface AuthRequest extends Request {
+  user?: {
+    id: string
+    email: string
+    role: string
+  }
+}
+
+// Request with guaranteed user (for use after authentication middleware)
+export interface AuthenticatedRequest extends Request {
+  user: {
+    id: string
+    email: string
+    role: string
+  }
+}
+
+export function authenticateToken(req: AuthRequest, res: Response, next: NextFunction): void {
   const authHeader = req.headers['authorization']
   const token = authHeader && authHeader.split(' ')[1] // Bearer TOKEN
 
@@ -37,7 +53,7 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
 }
 
 export function requireRole(roles: string | string[]) {
-  return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
+  return (req: AuthRequest, res: Response, next: NextFunction): void => {
     if (!req.user) {
       res.status(401).json({ error: 'Authentication required' })
       return
@@ -58,11 +74,11 @@ export function requireRole(roles: string | string[]) {
   }
 }
 
-export function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
+export function requireAdmin(req: AuthRequest, res: Response, next: NextFunction): void {
   requireRole('admin')(req, res, next)
 }
 
-export function optionalAuth(req: Request, res: Response, next: NextFunction): void {
+export function optionalAuth(req: AuthRequest, res: Response, next: NextFunction): void {
   const authHeader = req.headers['authorization']
   const token = authHeader && authHeader.split(' ')[1]
 
@@ -101,6 +117,3 @@ export function verifyToken(token: string): JWTPayload | null {
     return null
   }
 }
-
-// Legacy export for backward compatibility
-export type AuthRequest = AuthenticatedRequest
