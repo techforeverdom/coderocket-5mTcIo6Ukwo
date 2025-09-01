@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express'
 import { z } from 'zod'
+import { ParamsDictionary } from 'express-serve-static-core'
 import { authenticateToken, requireRole, AuthRequest } from '../middleware/auth.middleware'
 import { validateBody, validateParams, validateQuery, commonSchemas } from '../middleware/validation.middleware'
 import { asyncHandler } from '../middleware/error.middleware'
@@ -17,10 +18,8 @@ const campaignsQuerySchema = z.object({
 
 type CampaignsQuery = z.infer<typeof campaignsQuerySchema>
 
-// Extended request interface for validated queries
-interface CampaignsRequest extends Request {
-  query: CampaignsQuery
-}
+// Properly extend Request with generic parameters
+interface CampaignsRequest extends Request<ParamsDictionary, any, any, CampaignsQuery> {}
 
 // Get all campaigns
 router.get('/',
@@ -280,9 +279,8 @@ const categoryQuerySchema = z.object({
 
 type CategoryQuery = z.infer<typeof categoryQuerySchema>
 
-interface CategoryRequest extends Request {
-  query: CategoryQuery
-}
+// Properly extend Request with generic parameters for category queries
+interface CategoryRequest extends Request<ParamsDictionary, any, any, CategoryQuery> {}
 
 // Get campaigns by category
 router.get('/category/:category',
@@ -317,6 +315,17 @@ router.get('/category/:category',
         category: 'education',
         donorCount: 8,
         image: 'https://picsum.photos/id/60/400/300'
+      },
+      {
+        id: 'campaign-3',
+        title: 'Drama Club Costumes',
+        description: 'Help our drama club purchase costumes and props.',
+        goalAmount: 200000,
+        currentAmount: 85000,
+        status: 'active',
+        category: 'arts',
+        donorCount: 5,
+        image: 'https://picsum.photos/id/180/400/300'
       }
     ]
 
